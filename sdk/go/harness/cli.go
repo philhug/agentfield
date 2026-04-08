@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"regexp"
@@ -41,6 +42,16 @@ func RunCLI(ctx context.Context, cmd []string, env map[string]string, cwd string
 	if len(cmd) == 0 {
 		return nil, fmt.Errorf("empty command")
 	}
+
+	// Log each arg with its index and length for debugging.
+	for i, arg := range cmd {
+		display := arg
+		if len(display) > 80 {
+			display = display[:80] + fmt.Sprintf("...(%d chars)", len(arg))
+		}
+		log.Printf("[cli] arg[%d]: %q", i, display)
+	}
+	log.Printf("[cli] cwd: %s env_overrides: %v timeout: %d", cwd, env, timeout)
 
 	c := exec.CommandContext(ctx, cmd[0], cmd[1:]...)
 
@@ -84,6 +95,11 @@ func RunCLI(ctx context.Context, cmd []string, env map[string]string, cwd string
 		Stdout:     stdout.String(),
 		Stderr:     stderr.String(),
 		ReturnCode: 0,
+	}
+
+	log.Printf("[cli] exit=%d stdout_len=%d stderr_len=%d", result.ReturnCode, len(result.Stdout), len(result.Stderr))
+	if result.Stderr != "" {
+		log.Printf("[cli] stderr: %s", truncate(StripANSI(result.Stderr), 500))
 	}
 
 	if err != nil {
