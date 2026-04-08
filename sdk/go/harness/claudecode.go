@@ -60,12 +60,14 @@ func (p *ClaudeCodeProvider) Execute(ctx context.Context, prompt string, options
 		cmd = append(cmd, "--max-budget-usd", fmt.Sprintf("%.4f", options.MaxBudgetUSD))
 	}
 
-	for _, tool := range options.Tools {
-		cmd = append(cmd, "--allowedTools", tool)
+	if len(options.Tools) > 0 {
+		cmd = append(cmd, "--allowed-tools", strings.Join(options.Tools, ","))
 	}
 
-	// The prompt is passed via stdin-like argument (last positional arg)
-	cmd = append(cmd, prompt)
+	// Use "--" to separate flags from the prompt positional arg.
+	// Required because --allowedTools is variadic and would otherwise
+	// consume the prompt as a tool name.
+	cmd = append(cmd, "--", prompt)
 
 	env := make(map[string]string)
 	for k, v := range options.Env {
@@ -139,6 +141,14 @@ func (p *ClaudeCodeProvider) Execute(ctx context.Context, prompt string, options
 		// Non-zero exit but we got output — note the error but don't mark as fatal
 		raw.IsError = true
 		raw.ErrorMessage = fmt.Sprintf("Process exited with code %d", cliResult.ReturnCode)
+	} else if raw.Result == "" && cleanStderr != "" {
+		// Exit 0 but no stdout and stderr present — the process ran but
+		// produced nothing useful (e.g. auth failure, permission prompt).
+		// Surface stderr so callers can diagnose instead of a blank error.
+		raw.IsError = true
+		raw.FailureType = FailureNoOutput
+		raw.ErrorMessage = fmt.Sprintf("Process exited 0 but produced no output. Stderr: %s",
+			truncate(cleanStderr, 800))
 	}
 
 	return raw, nil
