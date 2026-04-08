@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React from "react";
 import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";

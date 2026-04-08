@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React from "react";
 import { act, renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

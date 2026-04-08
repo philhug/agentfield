@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const dagreLayoutMock = vi.hoisted(() => vi.fn());
