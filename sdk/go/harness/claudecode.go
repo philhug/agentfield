@@ -141,14 +141,6 @@ func (p *ClaudeCodeProvider) Execute(ctx context.Context, prompt string, options
 		// Non-zero exit but we got output — note the error but don't mark as fatal
 		raw.IsError = true
 		raw.ErrorMessage = fmt.Sprintf("Process exited with code %d", cliResult.ReturnCode)
-	} else if raw.Result == "" && cleanStderr != "" {
-		// Exit 0 but no stdout and stderr present — the process ran but
-		// produced nothing useful (e.g. auth failure, permission prompt).
-		// Surface stderr so callers can diagnose instead of a blank error.
-		raw.IsError = true
-		raw.FailureType = FailureNoOutput
-		raw.ErrorMessage = fmt.Sprintf("Process exited 0 but produced no output. Stderr: %s",
-			truncate(cleanStderr, 800))
 	}
 
 	return raw, nil
