@@ -391,18 +391,31 @@ func (r *Runner) handleSchemaWithRetry(
 	elapsed := int(time.Since(startTime).Milliseconds())
 	turns, sid, msgs := accumulateMetrics(allRaws)
 	finalDiagnosis := DiagnoseOutputFailure(outputPath, schema)
+
+	// Include provider errors from all attempts so the root cause is visible.
+	var providerErrors []string
+	for i, raw := range allRaws {
+		if raw.IsError && raw.ErrorMessage != "" {
+			providerErrors = append(providerErrors, fmt.Sprintf("attempt %d: %s", i+1, raw.ErrorMessage))
+		}
+	}
+	errMsg := fmt.Sprintf(
+		"Schema validation failed after %d retry attempt(s). Last error: %s",
+		maxRetries, finalDiagnosis,
+	)
+	if len(providerErrors) > 0 {
+		errMsg += " Provider errors: " + strings.Join(providerErrors, "; ")
+	}
+
 	return &Result{
-		Result:  allRaws[len(allRaws)-1].Result,
-		IsError: true,
-		ErrorMessage: fmt.Sprintf(
-			"Schema validation failed after %d retry attempt(s). Last error: %s",
-			maxRetries, finalDiagnosis,
-		),
-		FailureType: FailureSchema,
-		NumTurns:    turns,
-		DurationMS:  elapsed,
-		SessionID:   sid,
-		Messages:    msgs,
+		Result:       allRaws[len(allRaws)-1].Result,
+		IsError:      true,
+		ErrorMessage: errMsg,
+		FailureType:  FailureSchema,
+		NumTurns:     turns,
+		DurationMS:   elapsed,
+		SessionID:    sid,
+		Messages:     msgs,
 	}
 }
 
