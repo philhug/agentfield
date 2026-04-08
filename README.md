@@ -11,6 +11,7 @@
 [![Stars](https://img.shields.io/github/stars/Agent-Field/agentfield?style=flat&logo=github&logoColor=white&color=d4a24a&labelColor=0c0b09)](https://github.com/Agent-Field/agentfield/stargazers)
 [![License](https://img.shields.io/badge/license-Apache%202.0-d4a24a.svg?style=flat&labelColor=0c0b09)](LICENSE)
 [![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fsantoshkumarradha%2Fd98e2ad73502b4075f6a5f0ae4f5cae5%2Fraw%2Fbadge.json&style=flat&logo=download&logoColor=white&labelColor=0c0b09&cacheSeconds=3600)](https://github.com/Agent-Field/agentfield)
+[![Coverage](https://img.shields.io/badge/coverage-81.6%25-d4a24a.svg?style=flat&logo=codecov&logoColor=white&labelColor=0c0b09)](https://github.com/Agent-Field/agentfield/pull/368)
 [![Last Commit](https://img.shields.io/github/last-commit/Agent-Field/agentfield?style=flat&logo=git&logoColor=white&color=d4a24a&labelColor=0c0b09)](https://github.com/Agent-Field/agentfield/commits/main)
 [![Discord](https://img.shields.io/badge/discord-join%20us-d4a24a.svg?style=flat&labelColor=0c0b09&logo=discord&logoColor=white)](https://discord.gg/aBHaXMkpqh)
 
@@ -398,6 +399,29 @@ The control plane is a stateless Go service. Agents connect from anywhere - your
 **[GitHub Issues](https://github.com/Agent-Field/agentfield/issues)** · **[Documentation](https://agentfield.ai/docs/learn?utm_source=github-readme&utm_campaign=github-readme&utm_id=github-readme-community-docs)** · **[Examples](https://agentfield.ai/docs/learn/examples?utm_source=github-readme&utm_campaign=github-readme&utm_id=github-readme-community-examples)**
 
 </div>
+
+## Test Coverage
+
+AgentField is covered by automated tests across the control plane (Go) and the embedded Web UI (TypeScript / React). Coverage is measured by `go test -coverprofile` and `vitest --coverage`.
+
+| Component | Lines/Statements | Coverage |
+|---|---|---|
+| Control plane (Go, `control-plane/internal/...`) | 20,039 / 24,326 | **82.4%** |
+| Web UI (TypeScript, `control-plane/web/client/src/...`) | 33,830 / 41,693 | **81.1%** |
+| **Combined** | **53,869 / 66,019** | **81.6%** |
+
+Reproduce locally:
+
+```bash
+# Go control plane
+cd control-plane
+go test ./internal/... -coverprofile=cover.out -covermode=atomic
+go tool cover -func=cover.out | tail -1
+
+# Web UI
+cd control-plane/web/client
+npx vitest run --coverage
+```
 
 ## License
 
