@@ -265,6 +265,3 @@ func TestDIDRegistryAndAgentDIDBranches(t *testing.T) {
 	})
 }
 
-func ptrTime(value time.Time) *time.Time {
-	return &value
-}
