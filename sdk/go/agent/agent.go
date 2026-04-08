@@ -292,6 +292,13 @@ type Config struct {
 	// tasks to external coding agents (opencode, claude-code).
 	// Optional. If nil, Harness() calls require per-call provider options.
 	HarnessConfig *HarnessConfig
+
+	// CallTimeout sets the HTTP client timeout for cross-node Call() requests.
+	// This includes the full round-trip through the control plane. Agents that
+	// invoke LLM-backed reasoners via Call() should increase this beyond the
+	// default, since LLM calls can take 30s+.
+	// Optional. Default: 15s.
+	CallTimeout time.Duration
 }
 
 // CLIConfig controls CLI behaviour and presentation.
@@ -371,8 +378,12 @@ func New(cfg Config) (*Agent, error) {
 		cfg.Logger = log.New(os.Stdout, "[agent] ", log.LstdFlags)
 	}
 
+	callTimeout := cfg.CallTimeout
+	if callTimeout <= 0 {
+		callTimeout = 15 * time.Second
+	}
 	httpClient := &http.Client{
-		Timeout: 15 * time.Second,
+		Timeout: callTimeout,
 	}
 
 	// Initialize AI client if config provided
