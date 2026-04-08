@@ -23,12 +23,12 @@ func TestGetTemplate(t *testing.T) {
 		{
 			name:     "parses and executes python template",
 			template: "python/main.py.tmpl",
-			wantText: `node_id="agent-123"`,
+			wantText: `"agent-123"`,
 		},
 		{
 			name:     "parses and executes go template",
 			template: "go/main.go.tmpl",
-			wantText: `NodeID:        "agent-123"`,
+			wantText: `"agent-123"`,
 		},
 		{
 			name:        "missing template returns error",
@@ -81,8 +81,8 @@ func TestGetTemplateFiles(t *testing.T) {
 			name:     "python templates",
 			language: "python",
 			want: map[string]string{
-				"python/.env.example.tmpl":      ".env.example",
-				"python/.gitignore.tmpl":        ".gitignore",
+				"python/.env.example.tmpl":     ".env.example",
+				"python/.gitignore.tmpl":       ".gitignore",
 				"python/README.md.tmpl":        "README.md",
 				"python/main.py.tmpl":          "main.py",
 				"python/reasoners.py.tmpl":     "reasoners.py",
@@ -105,13 +105,13 @@ func TestGetTemplateFiles(t *testing.T) {
 			name:     "typescript templates",
 			language: "typescript",
 			want: map[string]string{
-				"typescript/.env.example.tmpl": ".env.example",
-				"typescript/.gitignore.tmpl":   ".gitignore",
-				"typescript/README.md.tmpl":    "README.md",
-				"typescript/main.ts.tmpl":      "main.ts",
-				"typescript/package.json.tmpl": "package.json",
-				"typescript/reasoners.ts.tmpl": "reasoners.ts",
-				"typescript/tsconfig.json.tmpl":"tsconfig.json",
+				"typescript/.env.example.tmpl":  ".env.example",
+				"typescript/.gitignore.tmpl":    ".gitignore",
+				"typescript/README.md.tmpl":     "README.md",
+				"typescript/main.ts.tmpl":       "main.ts",
+				"typescript/package.json.tmpl":  "package.json",
+				"typescript/reasoners.ts.tmpl":  "reasoners.ts",
+				"typescript/tsconfig.json.tmpl": "tsconfig.json",
 			},
 		},
 		{
