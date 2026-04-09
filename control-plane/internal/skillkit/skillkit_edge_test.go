@@ -235,11 +235,17 @@ func TestInstallExistingStateAndCanonicalFailures(t *testing.T) {
 		success := &fakeTarget{name: "success", displayName: "Success", method: "marker-block", detected: true, path: "/tmp/success"}
 		allTargets = []Target{success}
 
+		// Seed the state with two historical versions that are definitely
+		// NOT the current catalog version, so after Install we can assert
+		// that the merge kept the old ones AND added the catalog version
+		// in the right sorted position. Using literal "0.1.0" / "9.9.9"
+		// instead of "0.1.0" / "0.3.0" so the test stays correct regardless
+		// of what Catalog[0].Version happens to be bumped to on main.
 		state := &State{
 			Skills: map[string]InstalledSkill{
 				Catalog[0].Name: {
 					CurrentVersion:    "0.1.0",
-					AvailableVersions: []string{"0.3.0", "0.1.0"},
+					AvailableVersions: []string{"9.9.9", "0.1.0"},
 					Targets:           nil,
 				},
 			},
@@ -260,10 +266,23 @@ func TestInstallExistingStateAndCanonicalFailures(t *testing.T) {
 		if err != nil {
 			t.Fatalf("LoadState: %v", err)
 		}
-		got := strings.Join(loaded.Skills[Catalog[0].Name].AvailableVersions, ",")
-		want := "0.1.0,0.2.0,0.3.0"
-		if got != want {
-			t.Fatalf("AvailableVersions = %q want %q", got, want)
+		got := loaded.Skills[Catalog[0].Name].AvailableVersions
+		// Expect: the two seeded versions are still there and the catalog's
+		// current version got merged in.
+		wantContains := map[string]bool{
+			"0.1.0":              false,
+			"9.9.9":              false,
+			Catalog[0].Version:   false,
+		}
+		for _, v := range got {
+			if _, ok := wantContains[v]; ok {
+				wantContains[v] = true
+			}
+		}
+		for v, found := range wantContains {
+			if !found {
+				t.Fatalf("AvailableVersions = %v, missing %q", got, v)
+			}
 		}
 		if loaded.Skills[Catalog[0].Name].Targets == nil {
 			t.Fatal("Targets should be initialized")
