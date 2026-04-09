@@ -1,0 +1,19 @@
+# AgentField Project Configuration
+# This file marks this directory as an AgentField agent project
+# and configures how the agent integrates with the control plane.
+
+version: "1.0"
+name: {{.ProjectName}}
+description: "AgentField agent project"
+
+agent:
+  language: "python"
+  node_id: "{{.ProjectName}}"
+
+# MCP Server Integrations (optional)
+# Add MCP servers for your agent with:
+#   af add --mcp --url <server-url> [alias]
+mcp_servers: {}
+
+# Environment variables for your agent
+environment: {}
