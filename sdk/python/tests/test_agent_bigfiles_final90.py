@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import io
 import sys
 import types
 from types import MethodType
-from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import Mock
 
