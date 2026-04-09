@@ -11,7 +11,7 @@
 [![Stars](https://img.shields.io/github/stars/Agent-Field/agentfield?style=flat&logo=github&logoColor=white&color=d4a24a&labelColor=0c0b09)](https://github.com/Agent-Field/agentfield/stargazers)
 [![License](https://img.shields.io/badge/license-Apache%202.0-d4a24a.svg?style=flat&labelColor=0c0b09)](LICENSE)
 [![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fsantoshkumarradha%2Fd98e2ad73502b4075f6a5f0ae4f5cae5%2Fraw%2Fbadge.json&style=flat&logo=download&logoColor=white&labelColor=0c0b09&cacheSeconds=3600)](https://github.com/Agent-Field/agentfield)
-[![Coverage](https://img.shields.io/badge/coverage-81.6%25-d4a24a.svg?style=flat&logo=codecov&logoColor=white&labelColor=0c0b09)](https://github.com/Agent-Field/agentfield/pull/368)
+[![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fsantoshkumarradha%2Fagentfield-coverage-gist%2Fraw%2Fbadge.json&style=flat&logo=codecov&logoColor=white&labelColor=0c0b09)](https://github.com/Agent-Field/agentfield/actions/workflows/coverage.yml)
 [![Last Commit](https://img.shields.io/github/last-commit/Agent-Field/agentfield?style=flat&logo=git&logoColor=white&color=d4a24a&labelColor=0c0b09)](https://github.com/Agent-Field/agentfield/commits/main)
 [![Discord](https://img.shields.io/badge/discord-join%20us-d4a24a.svg?style=flat&labelColor=0c0b09&logo=discord&logoColor=white)](https://discord.gg/aBHaXMkpqh)
 
@@ -402,26 +402,35 @@ The control plane is a stateless Go service. Agents connect from anywhere - your
 
 ## Test Coverage
 
-AgentField is covered by automated tests across the control plane (Go) and the embedded Web UI (TypeScript / React). Coverage is measured by `go test -coverprofile` and `vitest --coverage`.
+AgentField is covered by automated tests across **five independent surfaces** — the Go control plane, the Go/Python/TypeScript SDKs, and the embedded React Web UI. Every PR runs a [coverage gate](docs/COVERAGE.md) that compares per-surface and weighted-aggregate coverage against a baseline checked into the repo and hard-fails if any surface regresses.
 
-| Component | Lines/Statements | Coverage |
-|---|---|---|
-| Control plane (Go, `control-plane/internal/...`) | 20,039 / 24,326 | **82.4%** |
-| Web UI (TypeScript, `control-plane/web/client/src/...`) | 33,830 / 41,693 | **81.1%** |
-| **Combined** | **53,869 / 66,019** | **81.6%** |
+| Surface | Lines / Statements | Coverage |
+|---|---:|---:|
+| `control-plane` (Go, `control-plane/internal/...`)       | 21,254 / 24,326 | **87.4%** 🟡 |
+| `sdk-go` (Go, `sdk/go/...`)                              | 3,106 / 3,527 | **88.1%** 🟡 |
+| `sdk-python` (Python, `sdk/python/agentfield/...`)       | 1,655 / 1,884 | **87.9%** 🟡 |
+| `sdk-typescript` (TypeScript, `sdk/typescript/src/...`)  | 5,128 / 5,540 | **92.6%** 🟢 |
+| `web-ui` (TypeScript, `control-plane/web/client/src/...`)| 37,435 / 41,693 | **89.8%** 🟡 |
+| **Aggregate (weighted by source size)** | **68,578 / 76,970** | **89.10%** |
+
+Thresholds enforced on every PR (see [`.coverage-gate.toml`](.coverage-gate.toml) and [`docs/COVERAGE.md`](docs/COVERAGE.md)):
+
+- Every surface must stay at or above **85.0%**
+- The weighted aggregate must stay at or above **88.0%**
+- No surface may regress more than **1.0 pp** against [`coverage-baseline.json`](coverage-baseline.json)
+- The aggregate may not regress more than **0.5 pp** against the same baseline
 
 Reproduce locally:
 
 ```bash
-# Go control plane
-cd control-plane
-go test ./internal/... -coverprofile=cover.out -covermode=atomic
-go tool cover -func=cover.out | tail -1
-
-# Web UI
-cd control-plane/web/client
-npx vitest run --coverage
+./scripts/coverage-summary.sh    # writes test-reports/coverage/{summary.json,summary.md}
+./scripts/coverage-gate.py \
+    --summary  test-reports/coverage/summary.json \
+    --baseline coverage-baseline.json \
+    --config   .coverage-gate.toml
 ```
+
+If the gate fails on your PR, read the sticky PR comment titled **"📊 Coverage gate"** — it lists the surface that regressed, the exact drop, and the one-line reproduce command for that surface. AI coding agents should download the `gate-status.json` artifact from the `Coverage Summary` job for the canonical machine-readable verdict and follow the loop in [`docs/COVERAGE.md#for-ai-coding-agents`](docs/COVERAGE.md#for-ai-coding-agents).
 
 ## License
 

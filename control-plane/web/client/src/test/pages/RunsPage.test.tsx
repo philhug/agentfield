@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from "react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -110,7 +110,29 @@ vi.mock("@/components/runs/RunLifecycleMenu", () => ({
     confirmLabel: (count: number) => (count > 1 ? `Cancel ${count} runs` : "Cancel run"),
     keepLabel: "Keep running",
   },
-  RunLifecycleMenu: () => <div data-testid="run-lifecycle-menu" />,
+  RunLifecycleMenu: ({
+    run,
+    onPause,
+    onResume,
+    onCancel,
+  }: {
+    run: (typeof baseRuns)[number];
+    onPause: (run: (typeof baseRuns)[number]) => void;
+    onResume: (run: (typeof baseRuns)[number]) => void;
+    onCancel: (run: (typeof baseRuns)[number]) => void;
+  }) => (
+    <div data-testid={`run-lifecycle-menu-${run.run_id}`}>
+      <button type="button" onClick={() => onPause(run)}>
+        Pause {run.run_id}
+      </button>
+      <button type="button" onClick={() => onResume(run)}>
+        Resume {run.run_id}
+      </button>
+      <button type="button" onClick={() => onCancel(run)}>
+        Cancel {run.run_id}
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("@/components/ui/status-pill", () => ({
@@ -218,13 +240,13 @@ vi.mock("@/components/ui/separator", () => ({
 
 vi.mock("@/components/ui/hover-card", () => ({
   HoverCard: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  HoverCardContent: () => null,
+  HoverCardContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   HoverCardTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 vi.mock("@/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  TooltipContent: () => null,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -276,6 +298,8 @@ vi.mock("@/components/ui/CompactTable", () => ({
 }));
 
 vi.mock("@/components/ui/json-syntax-highlight", () => ({
+  formatTruncatedFormattedJson: (value: unknown) =>
+    value == null ? "—" : JSON.stringify(value, null, 2),
   JsonHighlightedPre: ({ text }: { text: string }) => <pre>{text}</pre>,
 }));
 
@@ -500,5 +524,191 @@ describe("RunsPage", () => {
       "2 runs cancelled",
       "All selected runs were cancelled successfully.",
     );
+  });
+
+  it("renders API errors from the runs query", () => {
+    useRunsMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      isError: true,
+      error: new Error("runs query failed"),
+    });
+
+    render(<RunsPage />);
+
+    expect(screen.getByText("runs query failed")).toBeInTheDocument();
+  });
+
+  it("applies multi-status filtering client-side without sending a single API status", async () => {
+    const user = userEvent.setup();
+
+    render(<RunsPage />);
+
+    await user.click(screen.getByRole("button", { name: "Running" }));
+    await user.click(screen.getByRole("button", { name: "Succeeded" }));
+
+    await waitFor(() => {
+      expect(useRunsMock).toHaveBeenLastCalledWith(
+        expect.not.objectContaining({ status: expect.anything() }),
+      );
+    });
+
+    expect(screen.getByText("alpha")).toBeInTheDocument();
+    expect(screen.getByText("gamma")).toBeInTheDocument();
+    expect(screen.queryByText("beta")).not.toBeInTheDocument();
+  });
+
+  it("cancels pending debounce work when filters are cleared", () => {
+    vi.useFakeTimers();
+
+    render(<RunsPage />);
+
+    const searchInput = screen.getByPlaceholderText("Search runs, reasoners, agents…");
+    fireEvent.change(searchInput, { target: { value: "beta" } });
+
+    expect(useRunsMock).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ search: "beta" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    act(() => {
+      vi.advanceTimersByTime(350);
+    });
+
+    expect(useRunsMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: undefined, page: 1 }),
+    );
+    expect(screen.getByText("alpha")).toBeInTheDocument();
+    expect(screen.getByText("beta")).toBeInTheDocument();
+    expect(screen.getByText("gamma")).toBeInTheDocument();
+  });
+
+  it("navigates from row keyboard interaction", () => {
+    render(<RunsPage />);
+
+    const row = screen.getByText("alpha").closest("tr");
+    expect(row).not.toBeNull();
+
+    act(() => {
+      row?.focus();
+    });
+    act(() => {
+      row?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+
+    expect(navigateMock).toHaveBeenCalledWith("/runs/run-001-alpha");
+  });
+
+  it("shows singular bulk cancel copy and skips terminal runs", async () => {
+    const user = userEvent.setup();
+
+    render(<RunsPage />);
+
+    await user.click(screen.getByLabelText("Select run run-001-alpha").closest("td")!);
+    await user.click(screen.getByLabelText("Select run run-003-gamma").closest("td")!);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.getByText("Cancel this run?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel run" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Cancel run" }));
+
+    await waitFor(() => {
+      expect(cancelMutationMock).toHaveBeenCalledTimes(1);
+    });
+    expect(cancelMutationMock).toHaveBeenCalledWith("exec-1");
+    expect(cancelMutationMock).not.toHaveBeenCalledWith("exec-3");
+    expect(showSuccessMock).toHaveBeenCalledWith("1 run cancelled", undefined);
+  });
+
+  it("renders preview variants and lifecycle notifications for row actions", async () => {
+    const user = userEvent.setup();
+
+    useQueryMock.mockImplementation(({ queryKey }: { queryKey: string[] }) => {
+      const execId = queryKey[1];
+      if (execId === "exec-1") {
+        return {
+          data: { input_data: { foo: "bar" }, output_data: { ok: true } },
+          isLoading: false,
+        };
+      }
+      if (execId === "exec-2") {
+        return {
+          data: { input_data: { only: "input" }, output_data: null },
+          isLoading: false,
+        };
+      }
+      return {
+        data: { input_data: null, output_data: { only: "output" } },
+        isLoading: false,
+      };
+    });
+    pauseMutationMock.mockRejectedValueOnce(new Error("pause denied"));
+    resumeMutationMock.mockResolvedValueOnce(undefined);
+    cancelMutationMock.mockResolvedValueOnce(undefined);
+
+    render(<RunsPage />);
+
+    expect(screen.getByRole("region", { name: "Input and output preview" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Input preview" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Output preview" })).toBeInTheDocument();
+    expect(screen.getByText("Open run for full JSON and trace.")).toBeInTheDocument();
+    expect(screen.getByText("Open run for output and full trace.")).toBeInTheDocument();
+    expect(screen.getByText("Open run for full trace.")).toBeInTheDocument();
+
+    await user.click(screen.getAllByRole("button", { name: "Copy Input" })[0]);
+
+    await user.click(screen.getByRole("button", { name: "Pause run-001-alpha" }));
+    await waitFor(() => {
+      expect(showRunNotificationMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Pause failed",
+          message: "pause denied",
+          runId: "run-001-alpha",
+        }),
+      );
+    });
+
+    await user.click(screen.getByRole("button", { name: "Resume run-002-beta" }));
+    await waitFor(() => {
+      expect(showRunNotificationMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Resumed",
+          runId: "run-002-beta",
+        }),
+      );
+    });
+
+    await user.click(screen.getByRole("button", { name: "Cancel run-001-alpha" }));
+    await waitFor(() => {
+      expect(showRunNotificationMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Cancelled",
+          runId: "run-001-alpha",
+        }),
+      );
+    });
+  });
+
+  it("runs bulk pause and resume actions", async () => {
+    const user = userEvent.setup();
+
+    render(<RunsPage />);
+
+    await user.click(screen.getByLabelText("Select run run-001-alpha").closest("td")!);
+    await user.click(screen.getByRole("button", { name: "Pause" }));
+    await waitFor(() => {
+      expect(pauseMutationMock).toHaveBeenCalledWith("exec-1");
+    });
+    expect(showSuccessMock).toHaveBeenCalledWith("1 run paused", undefined);
+
+    await user.click(screen.getByLabelText("Select run run-001-alpha").closest("td")!);
+    await user.click(screen.getByLabelText("Select run run-002-beta").closest("td")!);
+    await user.click(screen.getByRole("button", { name: "Resume" }));
+    await waitFor(() => {
+      expect(resumeMutationMock).toHaveBeenCalledWith("exec-2");
+    });
+    expect(showSuccessMock).toHaveBeenCalledWith("1 run resumed", undefined);
   });
 });

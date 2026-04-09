@@ -7,6 +7,9 @@ on:
       - "sdk/**"
       - "scripts/test-all.sh"
       - "scripts/coverage-summary.sh"
+      - "scripts/coverage-gate.py"
+      - ".coverage-gate.toml"
+      - "coverage-baseline.json"
       - ".github/workflows/coverage.yml"
       - "docs/COVERAGE.md"
       - "docs/DEVELOPMENT.md"
@@ -18,6 +21,9 @@ on:
       - "sdk/**"
       - "scripts/test-all.sh"
       - "scripts/coverage-summary.sh"
+      - "scripts/coverage-gate.py"
+      - ".coverage-gate.toml"
+      - "coverage-baseline.json"
       - ".github/workflows/coverage.yml"
       - "docs/COVERAGE.md"
       - "docs/DEVELOPMENT.md"
@@ -26,6 +32,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   coverage-summary:
@@ -74,12 +81,37 @@ jobs:
       - name: Publish coverage summary
         run: cat test-reports/coverage/summary.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Run coverage gate
+        id: gate
+        # Thresholds live in .coverage-gate.toml at the repo root so they
+        # stay in-version-control and are the single source of truth for
+        # both local runs and CI.
+        run: |
+          ./scripts/coverage-gate.py \
+            --summary  test-reports/coverage/summary.json \
+            --baseline coverage-baseline.json \
+            --config   .coverage-gate.toml
+        continue-on-error: true
+
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
         with:
           name: coverage-summary
           path: test-reports/coverage/
           retention-days: 7
+
+      - name: Comment coverage report on PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: coverage-gate
+          path: test-reports/coverage/gate-report.md
+
+      - name: Fail the job if the gate failed
+        if: steps.gate.outcome == 'failure'
+        run: |
+          echo "::error::Coverage gate failed. See the coverage report comment on the PR for details and remediation steps."
+          exit 1
 
       - name: Update coverage badge gist
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.COVERAGE_GIST_ID != '' && secrets.GIST_TOKEN != ''
