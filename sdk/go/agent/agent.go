@@ -1731,6 +1731,116 @@ func (a *Agent) Call(ctx context.Context, target string, input map[string]any) (
 	return execResp.Result, nil
 }
 
+// CallAsync initiates asynchronous cross-node execution via the control plane.
+// It returns the execution ID immediately; use WaitExecution to poll for results.
+func (a *Agent) CallAsync(ctx context.Context, target string, input map[string]any) (string, error) {
+	if strings.TrimSpace(a.cfg.AgentFieldURL) == "" {
+		return "", errors.New("AgentFieldURL is required to call other reasoners")
+	}
+
+	if !strings.Contains(target, ".") {
+		target = fmt.Sprintf("%s.%s", a.cfg.NodeID, strings.TrimPrefix(target, "."))
+	}
+
+	execCtx := executionContextFrom(ctx)
+	runID := execCtx.RunID
+	if runID == "" {
+		runID = generateRunID()
+	}
+
+	payload := map[string]any{"input": input}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshal call payload: %w", err)
+	}
+
+	a.logExecutionInfo(ctx, "call.async.start", "starting async cross-node call", map[string]any{
+		"target": target,
+	})
+	url := fmt.Sprintf("%s/api/v1/execute/async/%s", strings.TrimSuffix(a.cfg.AgentFieldURL, "/"), strings.TrimPrefix(target, "/"))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Run-ID", runID)
+	if execCtx.ExecutionID != "" {
+		req.Header.Set("X-Parent-Execution-ID", execCtx.ExecutionID)
+	}
+	if execCtx.WorkflowID != "" {
+		req.Header.Set("X-Workflow-ID", execCtx.WorkflowID)
+	}
+	if execCtx.SessionID != "" {
+		req.Header.Set("X-Session-ID", execCtx.SessionID)
+	}
+	if execCtx.ActorID != "" {
+		req.Header.Set("X-Actor-ID", execCtx.ActorID)
+	}
+	if a.didManager != nil && a.didManager.IsRegistered() {
+		req.Header.Set("X-Agent-Node-DID", a.didManager.GetAgentDID())
+	}
+	if execCtx.AgentNodeDID != "" {
+		req.Header.Set("X-Agent-Node-DID", execCtx.AgentNodeDID)
+	}
+	req.Header.Set("X-Caller-Agent-ID", a.cfg.NodeID)
+
+	if a.cfg.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+a.cfg.Token)
+	}
+	if a.client != nil {
+		a.client.SignHTTPRequest(req, body)
+	}
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		a.logExecutionError(ctx, "call.async.failed", "async call failed", map[string]any{
+			"target": target,
+			"error":  err.Error(),
+		})
+		return "", fmt.Errorf("perform async call: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read async response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusAccepted {
+		var errResp struct {
+			Error        string      `json:"error"`
+			ErrorDetails interface{} `json:"error_details"`
+		}
+		if json.Unmarshal(bodyBytes, &errResp) == nil && errResp.Error != "" {
+			return "", &ExecuteError{
+				StatusCode:   resp.StatusCode,
+				Message:      errResp.Error,
+				ErrorDetails: errResp.ErrorDetails,
+			}
+		}
+		return "", &ExecuteError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("async execute failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes))),
+		}
+	}
+
+	var asyncResp struct {
+		ExecutionID string `json:"execution_id"`
+		RunID       string `json:"run_id"`
+		Status      string `json:"status"`
+	}
+	if err := json.Unmarshal(bodyBytes, &asyncResp); err != nil {
+		return "", fmt.Errorf("decode async response: %w", err)
+	}
+
+	a.logExecutionInfo(ctx, "call.async.accepted", "async call accepted", map[string]any{
+		"target":       target,
+		"execution_id": asyncResp.ExecutionID,
+	})
+	return asyncResp.ExecutionID, nil
+}
+
 // emitWorkflowEvent sends a workflow event to the control plane asynchronously.
 // Failures are logged but do not impact the caller.
 func (a *Agent) emitWorkflowEvent(

@@ -1347,3 +1347,74 @@ func TestCallLocalUnknownReasoner(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown reasoner")
 }
+
+func TestCallAsync(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/execute/async/") {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		assert.Equal(t, "run-1", r.Header.Get("X-Run-ID"))
+		assert.Equal(t, "parent-exec", r.Header.Get("X-Parent-Execution-ID"))
+
+		var reqBody map[string]any
+		json.NewDecoder(r.Body).Decode(&reqBody)
+		assert.Equal(t, map[string]any{"value": float64(42)}, reqBody["input"])
+
+		resp := map[string]any{
+			"execution_id": "exec-async-1",
+			"run_id":       "run-1",
+			"status":       "queued",
+		}
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		NodeID:        "node-1",
+		Version:       "1.0.0",
+		AgentFieldURL: server.URL,
+		Logger:        log.New(io.Discard, "", 0),
+	}
+
+	agent, err := New(cfg)
+	require.NoError(t, err)
+
+	ctx := contextWithExecution(context.Background(), ExecutionContext{
+		RunID:       "run-1",
+		ExecutionID: "parent-exec",
+	})
+
+	execID, err := agent.CallAsync(ctx, "target.node", map[string]any{"value": 42})
+	assert.NoError(t, err)
+	assert.Equal(t, "exec-async-1", execID)
+}
+
+func TestCallAsync_ErrorHandling(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/execute/async/") {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "queue full"})
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		NodeID:        "node-1",
+		Version:       "1.0.0",
+		AgentFieldURL: server.URL,
+		Logger:        log.New(io.Discard, "", 0),
+	}
+
+	agent, err := New(cfg)
+	require.NoError(t, err)
+
+	_, err = agent.CallAsync(context.Background(), "target.node", map[string]any{})
+	assert.Error(t, err)
+	var execErr *ExecuteError
+	assert.ErrorAs(t, err, &execErr)
+	assert.Equal(t, http.StatusServiceUnavailable, execErr.StatusCode)
+}
