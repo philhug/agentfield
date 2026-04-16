@@ -1418,3 +1418,110 @@ func TestCallAsync_ErrorHandling(t *testing.T) {
 	assert.ErrorAs(t, err, &execErr)
 	assert.Equal(t, http.StatusServiceUnavailable, execErr.StatusCode)
 }
+
+func TestWaitExecution_Success(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/executions/exec-1") || r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		callCount++
+		var resp map[string]any
+		if callCount < 3 {
+			resp = map[string]any{
+				"execution_id": "exec-1",
+				"status":       "running",
+			}
+		} else {
+			resp = map[string]any{
+				"execution_id": "exec-1",
+				"status":       "succeeded",
+				"result":       map[string]any{"pr_url": "https://github.com/test/pr/1"},
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		NodeID:        "node-1",
+		Version:       "1.0.0",
+		AgentFieldURL: server.URL,
+		Logger:        log.New(io.Discard, "", 0),
+	}
+
+	agent, err := New(cfg)
+	require.NoError(t, err)
+
+	result, err := agent.WaitExecution(context.Background(), "exec-1", 10*time.Millisecond)
+	assert.NoError(t, err)
+	assert.Equal(t, "https://github.com/test/pr/1", result["pr_url"])
+	assert.Equal(t, 3, callCount)
+}
+
+func TestWaitExecution_Failed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/executions/exec-1") || r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		resp := map[string]any{
+			"execution_id": "exec-1",
+			"status":       "failed",
+			"error":        "build crashed",
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		NodeID:        "node-1",
+		Version:       "1.0.0",
+		AgentFieldURL: server.URL,
+		Logger:        log.New(io.Discard, "", 0),
+	}
+
+	agent, err := New(cfg)
+	require.NoError(t, err)
+
+	_, err = agent.WaitExecution(context.Background(), "exec-1", 10*time.Millisecond)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "build crashed")
+}
+
+func TestWaitExecution_ContextCancelled(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/executions/exec-1") || r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		resp := map[string]any{
+			"execution_id": "exec-1",
+			"status":       "running",
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		NodeID:        "node-1",
+		Version:       "1.0.0",
+		AgentFieldURL: server.URL,
+		Logger:        log.New(io.Discard, "", 0),
+	}
+
+	agent, err := New(cfg)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	_, err = agent.WaitExecution(ctx, "exec-1", 10*time.Millisecond)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}

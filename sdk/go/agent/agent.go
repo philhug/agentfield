@@ -1841,6 +1841,103 @@ func (a *Agent) CallAsync(ctx context.Context, target string, input map[string]a
 	return asyncResp.ExecutionID, nil
 }
 
+// WaitExecution polls the control plane for execution status until it
+// succeeds, fails, or the context is cancelled.
+func (a *Agent) WaitExecution(ctx context.Context, executionID string, pollInterval time.Duration) (map[string]any, error) {
+	if strings.TrimSpace(a.cfg.AgentFieldURL) == "" {
+		return nil, errors.New("AgentFieldURL is required to poll execution status")
+	}
+
+	url := fmt.Sprintf("%s/api/v1/executions/%s", strings.TrimSuffix(a.cfg.AgentFieldURL, "/"), executionID)
+
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+			result, done, err := a.pollExecution(ctx, url, executionID)
+			if err != nil {
+				return nil, err
+			}
+			if done {
+				return result, nil
+			}
+		}
+	}
+}
+
+func (a *Agent) pollExecution(ctx context.Context, url, executionID string) (map[string]any, bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("build poll request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if a.cfg.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+a.cfg.Token)
+	}
+	req.Header.Set("X-Caller-Agent-ID", a.cfg.NodeID)
+	if a.client != nil {
+		a.client.SignHTTPRequest(req, nil)
+	}
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, false, fmt.Errorf("poll execution %s: %w", executionID, err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, false, fmt.Errorf("read poll response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, false, &ExecuteError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("poll execution %s failed (%d): %s", executionID, resp.StatusCode, strings.TrimSpace(string(bodyBytes))),
+		}
+	}
+
+	var statusResp struct {
+		ExecutionID  string         `json:"execution_id"`
+		Status       string         `json:"status"`
+		Result       map[string]any `json:"result"`
+		Error        *string        `json:"error"`
+		ErrorDetails interface{}    `json:"error_details"`
+	}
+	if err := json.Unmarshal(bodyBytes, &statusResp); err != nil {
+		return nil, false, fmt.Errorf("decode poll response: %w", err)
+	}
+
+	switch strings.ToLower(statusResp.Status) {
+	case "succeeded":
+		a.logExecutionInfo(ctx, "call.async.complete", "async execution completed", map[string]any{
+			"execution_id": executionID,
+		})
+		return statusResp.Result, true, nil
+	case "failed":
+		errMsg := "execution failed"
+		if statusResp.Error != nil && *statusResp.Error != "" {
+			errMsg = *statusResp.Error
+		}
+		a.logExecutionError(ctx, "call.async.failed", "async execution failed", map[string]any{
+			"execution_id": executionID,
+			"error":        errMsg,
+		})
+		return nil, true, &ExecuteError{
+			StatusCode:   http.StatusOK,
+			Message:      errMsg,
+			ErrorDetails: statusResp.ErrorDetails,
+		}
+	default:
+		// queued, running — keep polling
+		return nil, false, nil
+	}
+}
+
 // emitWorkflowEvent sends a workflow event to the control plane asynchronously.
 // Failures are logged but do not impact the caller.
 func (a *Agent) emitWorkflowEvent(
