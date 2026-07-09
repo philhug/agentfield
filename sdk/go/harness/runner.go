@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -20,6 +21,11 @@ type Runner struct {
 	// DefaultOptions are merged with per-call options (per-call wins).
 	DefaultOptions Options
 	Logger         *log.Logger
+
+	// RemoteCaller, when set, enables the "remote" provider. The agent
+	// package wires this to *agent.Agent (which satisfies RemoteCaller).
+	// Nil if only CLI providers are used.
+	RemoteCaller RemoteCaller
 }
 
 // NewRunner creates a harness runner with default options.
@@ -36,6 +42,10 @@ func NewRunner(defaults Options) *Runner {
 //
 // The schema parameter should be a JSON Schema as map[string]any. If dest
 // is non-nil, the validated output is unmarshalled into it.
+//
+// For the "remote" provider, schema is passed natively in the wire payload
+// and structured output is returned in RawResult.Structured — the file-based
+// schema pipeline (prompt suffix, output file, repair) is skipped entirely.
 func (r *Runner) Run(ctx context.Context, prompt string, schema map[string]any, dest any, overrides Options) (*Result, error) {
 	opts := r.mergeOptions(overrides)
 
@@ -45,12 +55,50 @@ func (r *Runner) Run(ctx context.Context, prompt string, schema map[string]any, 
 		)
 	}
 
+	// Pass schema on Options so providers that handle it natively (remote)
+	// can access it without the Runner's file-based mechanism.
+	if schema != nil {
+		schemaBytes, err := json.Marshal(schema)
+		if err != nil {
+			return nil, fmt.Errorf("marshal schema: %w", err)
+		}
+		opts.Schema = schemaBytes
+	}
+
 	provider, err := r.buildProvider(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	// Determine output directory for schema files.
+	startTime := time.Now()
+
+	// Remote providers handle schema natively — no file-based prompt suffix,
+	// no temp output directory, no file-based schema retry.
+	if opts.Provider == ProviderRemote {
+		raw, err := r.executeWithRetry(ctx, provider, prompt, opts)
+		if err != nil {
+			return nil, err
+		}
+		elapsed := int(time.Since(startTime).Milliseconds())
+		if raw.Structured != nil && dest != nil {
+			if err := json.Unmarshal(raw.Structured, dest); err != nil {
+				return nil, fmt.Errorf("unmarshal structured output: %w", err)
+			}
+		}
+		return &Result{
+			Result:       raw.Result,
+			Parsed:       dest,
+			IsError:      raw.IsError,
+			ErrorMessage: raw.ErrorMessage,
+			FailureType:  raw.FailureType,
+			NumTurns:     raw.Metrics.NumTurns,
+			DurationMS:   elapsed,
+			SessionID:    raw.Metrics.SessionID,
+			Messages:     raw.Messages,
+		}, nil
+	}
+
+	// CLI provider path: file-based schema handling.
 	outputDir := opts.Cwd
 	if outputDir == "" {
 		outputDir = "."
@@ -69,8 +117,6 @@ func (r *Runner) Run(ctx context.Context, prompt string, schema map[string]any, 
 	if schema != nil {
 		effectivePrompt = prompt + BuildPromptSuffix(schema, outputDir)
 	}
-
-	startTime := time.Now()
 
 	raw, err := r.executeWithRetry(ctx, provider, effectivePrompt, opts)
 	if err != nil {
@@ -97,6 +143,12 @@ func (r *Runner) Run(ctx context.Context, prompt string, schema map[string]any, 
 }
 
 func (r *Runner) buildProvider(opts Options) (Provider, error) {
+	if opts.Provider == ProviderRemote {
+		if r.RemoteCaller == nil {
+			return nil, fmt.Errorf("remote provider requires a RemoteCaller on the Runner")
+		}
+		return NewRemoteProvider(r.RemoteCaller), nil
+	}
 	binPath := opts.BinPath
 	if binPath == "" {
 		binPath = r.DefaultOptions.BinPath
@@ -168,6 +220,18 @@ func (r *Runner) mergeOptions(overrides Options) Options {
 	}
 	if overrides.SchemaMaxRetries > 0 {
 		merged.SchemaMaxRetries = overrides.SchemaMaxRetries
+	}
+	if overrides.Schema != nil {
+		merged.Schema = overrides.Schema
+	}
+	if overrides.SandboxID != "" {
+		merged.SandboxID = overrides.SandboxID
+	}
+	if overrides.NodeID != "" {
+		merged.NodeID = overrides.NodeID
+	}
+	if overrides.MaxTokens > 0 {
+		merged.MaxTokens = overrides.MaxTokens
 	}
 
 	return merged

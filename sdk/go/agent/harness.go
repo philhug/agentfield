@@ -10,7 +10,7 @@ import (
 // providing lazy initialization and a convenience Harness() method.
 // HarnessConfig configures the default harness runner for the agent.
 type HarnessConfig struct {
-	// Provider is the default provider: "claude-code", "codex", "gemini", or "opencode".
+	// Provider is the default provider: "claude-code", "codex", "gemini", "opencode", or "remote".
 	Provider string
 
 	// Model is the default model identifier.
@@ -36,6 +36,13 @@ type HarnessConfig struct {
 
 	// SchemaMaxRetries for schema validation failures. Default 2.
 	SchemaMaxRetries int
+
+	// SandboxID is the default sandbox for the remote provider.
+	SandboxID string
+
+	// NodeID targets a specific AF node for the remote provider.
+	// Empty uses the default ("principal-agent").
+	NodeID string
 }
 
 // HarnessRunner returns the agent's lazily-initialized harness runner.
@@ -55,8 +62,12 @@ func (a *Agent) HarnessRunner() *harness.Runner {
 			opts.Timeout = hc.Timeout
 			opts.MaxRetries = hc.MaxRetries
 			opts.SchemaMaxRetries = hc.SchemaMaxRetries
+			opts.SandboxID = hc.SandboxID
+			opts.NodeID = hc.NodeID
 		}
-		a.harnessRunner = harness.NewRunner(opts)
+		runner := harness.NewRunner(opts)
+		runner.RemoteCaller = a // *agent.Agent satisfies harness.RemoteCaller
+		a.harnessRunner = runner
 	}
 	return a.harnessRunner
 }

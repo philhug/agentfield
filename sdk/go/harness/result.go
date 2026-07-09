@@ -2,6 +2,8 @@
 // and extracts structured results with schema validation and retry logic.
 package harness
 
+import "encoding/json"
+
 // FailureType classifies how a harness invocation failed so the runner
 // can decide on a retry strategy.
 type FailureType string
@@ -26,7 +28,11 @@ type Metrics struct {
 // RawResult is the output from a single provider execution before schema
 // parsing.
 type RawResult struct {
-	Result       string
+	Result string
+	// Structured holds native structured output (JSON) when the provider
+	// supports schema natively (e.g. RemoteProvider). CLI providers leave
+	// this nil and rely on the Runner's file-based schema pipeline.
+	Structured   json.RawMessage   `json:"structured,omitempty"`
 	Messages     []map[string]any
 	Metrics      Metrics
 	IsError      bool

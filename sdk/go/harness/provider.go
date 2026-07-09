@@ -1,6 +1,18 @@
 package harness
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+	"time"
+)
+
+// RemoteCaller is the interface used by RemoteProvider to dispatch calls
+// over the AF control plane. *agent.Agent satisfies this implicitly,
+// avoiding an import cycle (harness cannot import agent).
+type RemoteCaller interface {
+	CallAsync(ctx context.Context, target string, input map[string]any) (string, error)
+	WaitExecution(ctx context.Context, execID string, pollInterval time.Duration) (map[string]any, error)
+}
 
 const (
 	// ProviderOpenCode is the provider name for OpenCode CLI.
@@ -11,6 +23,9 @@ const (
 	ProviderCodex = "codex"
 	// ProviderGemini is the provider name for Gemini CLI.
 	ProviderGemini = "gemini"
+	// ProviderRemote dispatches to a remote AF harness reasoner over the
+	// control plane instead of spawning a local CLI subprocess.
+	ProviderRemote = "remote"
 )
 
 // Provider is the interface that CLI-based harness providers implement.
@@ -58,6 +73,24 @@ type Options struct {
 
 	// ResumeSessionID resumes a previous session (provider-dependent).
 	ResumeSessionID string
+
+	// Schema is the JSON Schema for structured output, passed natively to
+	// providers that support it (e.g. remote). CLI providers ignore this
+	// field and use the Runner's file-based prompt-suffix mechanism instead.
+	Schema json.RawMessage
+
+	// SandboxID, when set, routes the harness call to a sandbox-confined
+	// remote reasoner. Ignored by CLI providers.
+	SandboxID string
+
+	// NodeID targets a specific AF node serving the harness reasoner.
+	// Empty uses the runner's default node. Ignored by CLI providers.
+	NodeID string
+
+	// MaxTokens is the per-call output token cap (0 = engine default).
+	// Used by remote providers; CLI providers map this to provider-specific
+	// flags where applicable.
+	MaxTokens int
 
 	// BinPath overrides the provider binary path.
 	BinPath string
