@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 <!-- changelog:entries -->
 
+## [0.1.67-rc.4] - 2026-07-09
+
+
+### Fixed
+
+- Fix(sdk): add JSON tags to RawResult/Metrics for wire-format decoding
+
+RawResult and Metrics lacked JSON tags, so snake_case fields from the
+remote reasoner (failure_type, num_turns, etc.) didn't decode. Add tags
+matching the wire format. Also add remote_test.go with contract tests
+verifying the RemoteProvider marshals wireInput and decodes RawResult
+correctly on both sides of the wire. (053503e)
+
 ## [0.1.67-rc.3] - 2026-07-09
 
 
