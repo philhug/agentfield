@@ -19,26 +19,26 @@ const (
 
 // Metrics captured from a single provider execution.
 type Metrics struct {
-	DurationMS    int
-	DurationAPIMS int
-	NumTurns      int
-	SessionID     string
+	DurationMS    int    `json:"duration_ms,omitempty"`
+	DurationAPIMS int    `json:"duration_api_ms,omitempty"`
+	NumTurns      int    `json:"num_turns"`
+	SessionID     string `json:"session_id,omitempty"`
 }
 
 // RawResult is the output from a single provider execution before schema
 // parsing.
 type RawResult struct {
-	Result string
+	Result string `json:"result"`
 	// Structured holds native structured output (JSON) when the provider
 	// supports schema natively (e.g. RemoteProvider). CLI providers leave
 	// this nil and rely on the Runner's file-based schema pipeline.
 	Structured   json.RawMessage   `json:"structured,omitempty"`
-	Messages     []map[string]any
-	Metrics      Metrics
-	IsError      bool
-	ErrorMessage string
-	FailureType  FailureType
-	ReturnCode   int
+	Messages     []map[string]any `json:"messages,omitempty"`
+	Metrics      Metrics          `json:"metrics"`
+	IsError      bool             `json:"is_error"`
+	ErrorMessage string           `json:"error_message,omitempty"`
+	FailureType  FailureType      `json:"failure_type,omitempty"`
+	ReturnCode   int              `json:"return_code,omitempty"`
 }
 
 // Result is the final harness output after schema validation, retries, and
