@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 <!-- changelog:entries -->
 
+## [0.1.67-rc.3] - 2026-07-09
+
+
+### Added
+
+- Feat(sdk): add remote harness provider for AF control-plane dispatch
+
+Add RemoteProvider to the Go SDK harness package that dispatches harness
+calls to a remote AF reasoner over the control plane instead of spawning
+a local CLI subprocess. This enables ag.Harness() to work for both
+local-CLI and remote-sandbox scenarios through a single API.
+
+Key changes:
+- Add Structured field to RawResult for native structured output
+- Add Schema, SandboxID, NodeID, MaxTokens fields to Options
+- Add RemoteCaller interface (satisfied implicitly by *agent.Agent)
+- Add RemoteProvider implementing Provider via CallAsync/WaitExecution
+- Wire agent.HarnessRunner() to set RemoteCaller on the Runner
+- Update Runner.Run() to handle native structured output (remote path)
+  alongside the existing file-based schema pipeline (CLI path)
+- Update BuildProvider to recognize "remote" provider name
+- Add SandboxID and NodeID to HarnessConfig
+
+The wire format mirrors harness.Options/RawResult field names so the
+RemoteProvider marshals/unmarshals with zero field mapping. The remote
+reasoner (run_harness) decodes structurally without importing the
+harness package. (c8ccc12)
+
 ## [0.1.67-rc.2] - 2026-04-16
 
 
